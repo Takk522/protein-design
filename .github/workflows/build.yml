@@ -19,7 +19,9 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          cd server-napi && npm ci
 
       - name: Build macOS
         run: npm run electron:build:mac
@@ -44,9 +46,13 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          cd server-napi && npm ci
 
       - name: Download Python backend
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           # Find latest successful build-backend run
           $run = gh api repos/Takk522/protein-design/actions/runs --jq '.workflow_runs[] | select(.name == "Build Python Backend" and .conclusion == "success") | {id, created_at}' --paginate | ConvertFrom-Json | Sort-Object created_at -Descending | Select-Object -First 1
