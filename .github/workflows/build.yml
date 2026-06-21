@@ -7,33 +7,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-mac:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: |
-          npm ci
-          cd server-napi && npm ci
-
-      - name: Build macOS
-        run: npm run electron:build:mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-dmg
-          path: release/*.dmg
-
   build-win:
     runs-on: windows-latest
     steps:
@@ -51,14 +24,8 @@ jobs:
           cd server-napi && npm ci
 
       - name: Download Python backend
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          # Find latest successful build-backend run
-          $run = gh api repos/Takk522/protein-design/actions/runs --jq '.workflow_runs[] | select(.name == "Build Python Backend" and .conclusion == "success") | {id, created_at}' --paginate | ConvertFrom-Json | Sort-Object created_at -Descending | Select-Object -First 1
-          Write-Host "Using build run: $($run.id)"
-          # Download artifact from that run
-          gh api repos/Takk522/protein-design/actions/runs/$($run.id)/artifacts --jq '.artifacts[0].archive_download_url' -F output=protein_backend.zip | Invoke-WebRequest -OutFile protein_backend.zip
+          curl -L -o protein_backend.zip https://github.com/Takk522/protein-design/actions/artifacts/7773045397/zip
           Expand-Archive protein_backend.zip -DestinationPath .
           Move-Item ProteinDesignBackend.exe ./
 
@@ -72,7 +39,7 @@ jobs:
           path: release/*.exe
 
   release:
-    needs: [build-mac, build-win]
+    needs: build-win
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -85,6 +52,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: artifacts/**/*.exe
-          draft: true
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
