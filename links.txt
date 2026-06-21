@@ -1,0 +1,23 @@
+chrome://flags/#unsafely-treat-insecure-origin-as-secure
+
+edge://flags/#unsafely-treat-insecure-origin-as-secure
+
+http://10.109.92.117
+
+chmod +x run_inference.py
+
+cp -r examples /usr/local/lib/python3.10/dist-packages/rfdiffusion/inference/../..
+
+
+Chroma安装
+pip install generate-chroma
+
+Chroma
+https://github.com/generatebio/chroma
+
+RFdiffusion
+https://github.com/RosettaCommons/RFdiffusion
+
+ProteinMPNN
+https://github.com/dauparas/ProteinMPNN
+

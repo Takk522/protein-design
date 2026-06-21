@@ -1,0 +1,84 @@
+name: Build Python Backend
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-backend:
+    runs-on: windows-latest
+    timeout-hours: 3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install generate-chroma fastapi uvicorn httpx pydantic numpy
+
+      - name: Clone ProteinMPNN
+        run: git clone https://github.com/NVIDIA/ProteinMPNN.git
+
+      - name: Fix server paths
+        run: |
+          python -c "
+          import os
+          # Fix server/main.py
+          with open('server/main.py', 'r') as f:
+            content = f.read()
+          content = content.replace('/Users/jianchengluo/anaconda3/envs/chroma', 'C:\\\\Users\\\\runneradmin\\\\miniconda3\\\\envs\\\\chroma')
+          content = content.replace('/Users/jianchengluo/ProteinMPNN', os.getcwd() + '\\\\ProteinMPNN')
+          content = content.replace('/Users/jianchengluo/.protein-design', os.getcwd())
+          with open('server/main.py', 'w') as f:
+            f.write(content)
+
+          # Fix run_proteinmpnn.py
+          with open('server/run_proteinmpnn.py', 'r') as f:
+            content = f.read()
+          content = content.replace('/Users/jianchengluo/ProteinMPNN', os.getcwd() + '\\\\ProteinMPNN')
+          content = content.replace('/Users/jianchengluo/anaconda3/bin/python3', 'python')
+          with open('server/run_proteinmpnn.py', 'w') as f:
+            f.write(content)
+
+          # Fix run_chroma.py
+          with open('server/run_chroma.py', 'r') as f:
+            content = f.read()
+          content = content.replace('/Users/jianchengluo/anaconda3/envs/chroma', 'C:\\\\Users\\\\runneradmin\\\\miniconda3\\\\envs\\\\chroma')
+          with open('server/run_chroma.py', 'w') as f:
+            f.write(content)
+          "
+
+      - name: Build with PyInstaller
+        run: pyinstaller --onefile --console --name ProteinDesignBackend server/main.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProteinDesignBackend
+          path: dist/ProteinDesignBackend.exe
+
+  release:
+    needs: build-backend
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ProteinDesignBackend
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ProteinDesignBackend.exe
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

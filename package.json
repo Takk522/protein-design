@@ -1,0 +1,88 @@
+{
+  "name": "protein-design",
+  "version": "1.0.3",
+  "description": "A desktop application for protein design using Chroma, ProteinMPNN, and ESMFold",
+  "author": "Protein Design Team",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:backend": "cd server-napi && npm run build",
+    "preview": "vite preview",
+    "electron:dev": "npm run build:backend && concurrently \"vite\" \"node server-napi/dist/server.js\"",
+    "electron:build:mac": "npm run build:backend && npm run build && electron-builder --mac",
+    "electron:build:win": "npm run build:backend && npm run build && electron-builder --win",
+    "electron:build": "npm run build:backend && npm run build && electron-builder --mac --win"
+  },
+  "dependencies": {
+    "@radix-ui/react-slider": "^1.1.2",
+    "@radix-ui/react-tabs": "^1.0.4",
+    "3dmol": "^2.5.4",
+    "clsx": "^2.1.1",
+    "electron-log": "^5.4.3",
+    "jszip": "^3.10.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "electron": "^32.0.0",
+    "electron-builder": "^24.13.3",
+    "typescript": "^5.4.5",
+    "vite": "^5.4.21",
+    "vite-plugin-electron": "^0.28.7",
+    "vite-plugin-electron-renderer": "^0.14.5"
+  },
+  "build": {
+    "appId": "com.protein.design",
+    "productName": "Protein Design",
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.science",
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["arm64", "x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Protein Design",
+      "perMachine": false,
+      "installerIcon": null,
+      "uninstallerIcon": null,
+      "installerHeaderIcon": null,
+      "include": null
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "server-napi/dist/**/*"
+    ],
+    "asarUnpack": [
+      "server-napi/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "server-napi/dist",
+        "to": "server-napi/dist"
+      }
+    ]
+  }
+}

@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+release/
+*.exe
+*.dmg
+*.blockmap
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+venv/
+.venv/
+env/
+
+# Electron
+*.log
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Confidential files (if any)
+.env
+.env.local
+
+# Build artifacts
+*.asar
+*.asar.unpacked
+
+# OS specific
+Thumbs.db
+
+# Large model files - downloaded during CI build
+ProteinMPNN/
+server-napi/node_modules/
+
