@@ -46,6 +46,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Download Python backend
+        run: |
+          # Find latest successful build-backend run
+          $run = gh api repos/Takk522/protein-design/actions/runs --jq '.workflow_runs[] | select(.name == "Build Python Backend" and .conclusion == "success") | {id, created_at}' --paginate | ConvertFrom-Json | Sort-Object created_at -Descending | Select-Object -First 1
+          Write-Host "Using build run: $($run.id)"
+          # Download artifact from that run
+          gh api repos/Takk522/protein-design/actions/runs/$($run.id)/artifacts --jq '.artifacts[0].archive_download_url' -F output=protein_backend.zip | Invoke-WebRequest -OutFile protein_backend.zip
+          Expand-Archive protein_backend.zip -DestinationPath .
+          Move-Item ProteinDesignBackend.exe ./
+
       - name: Build Windows
         run: npm run electron:build:win
 
