@@ -48,7 +48,6 @@ env/
 # OS specific
 Thumbs.db
 
-# Large model files - downloaded during CI build
-ProteinMPNN/
+# Large model files
 server-napi/node_modules/
 

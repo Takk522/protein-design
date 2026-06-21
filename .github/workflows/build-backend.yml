@@ -24,8 +24,7 @@ jobs:
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install generate-chroma fastapi uvicorn httpx pydantic numpy
 
-      - name: Clone ProteinMPNN
-        run: git clone https://github.com/NVIDIA/ProteinMPNN.git
+      # ProteinMPNN is already in the repo - no need to clone
 
       - name: Fix server paths
         run: |
