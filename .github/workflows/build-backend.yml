@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install generate-chroma fastapi uvicorn httpx pydantic numpy
+          pip install generate-chroma fastapi uvicorn httpx pydantic numpy pyinstaller
 
       # ProteinMPNN is already in the repo - no need to clone
 
