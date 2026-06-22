@@ -9,16 +9,20 @@ import json
 import traceback
 import tempfile
 import os
+from datetime import datetime
 
-# Write logs to temp file for debugging - use fixed path in same dir as script
-LOG_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_FILE = os.path.join(LOG_DIR, "chroma_debug.log")
+# Use user's desktop as log location for easy access
+DESKTOP_PATH = os.path.join(os.path.expanduser("~"), "Desktop")
+LOG_FILE = os.path.join(DESKTOP_PATH, "chroma_debug.log")
 
 def log(msg):
-    timestamp = __import__('datetime').datetime.now().isoformat()
+    timestamp = datetime.now().isoformat()
     line = f"[{timestamp}] {msg}\n"
-    with open(LOG_FILE, 'a') as f:
-        f.write(line)
+    try:
+        with open(LOG_FILE, 'a') as f:
+            f.write(line)
+    except Exception as e:
+        pass  # If logging fails, at least print
     print(line, end='', flush=True)
 
 log(f"=== run_chroma.py STARTED ===")
@@ -26,6 +30,7 @@ log(f"sys.executable: {sys.executable}")
 log(f"sys.version: {sys.version}")
 log(f"sys.argv: {sys.argv}")
 log(f"CWD: {os.getcwd()}")
+log(f"LOG_FILE: {LOG_FILE}")
 
 try:
     from chroma import api
