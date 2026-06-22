@@ -16,10 +16,26 @@ import asyncio
 import tempfile
 import json
 from pathlib import Path
+from datetime import datetime
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Desktop log for debugging
+DESKTOP_PATH = os.path.join(os.path.expanduser("~"), "Desktop")
+LOG_FILE = os.path.join(DESKTOP_PATH, "chroma_debug.log")
+
+def log(msg):
+    """Write debug log to desktop and print"""
+    timestamp = datetime.now().isoformat()
+    line = f"[{timestamp}] {msg}\n"
+    try:
+        with open(LOG_FILE, 'a') as f:
+            f.write(line)
+    except Exception:
+        pass  # If logging fails, at least print
+    print(line, end='', flush=True)
 
 # Handle PyInstaller extraction path
 def get_base_path():
@@ -27,6 +43,220 @@ def get_base_path():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
+
+# ============== Chroma Import and Setup ==============
+# Chroma is imported inline to avoid PyInstaller subprocess issues
+
+CHROMA_AVAILABLE = False
+chroma_api = None
+Chroma = None
+Protein = None
+conditioners = None
+SymmetryConditioner = None
+ShapeConditioner = None
+RgConditioner = None
+SubstructureConditioner = None
+get_point_group = None
+
+try:
+    from chroma import api as chroma_api
+    from chroma import Chroma, Protein
+    from chroma import conditioners
+    from chroma.layers.structure.conditioners import (
+        SymmetryConditioner, ShapeConditioner, RgConditioner, SubstructureConditioner
+    )
+    from chroma.layers.structure.symmetry import get_point_group
+    CHROMA_AVAILABLE = True
+    log("Chroma imported successfully")
+except ImportError as e:
+    log(f"Chroma import error: {e}")
+
+# Register API key at startup
+if CHROMA_AVAILABLE:
+    API_KEY = os.environ.get('CHROMA_API_KEY', '8a633008828649bda2b1431721abdb3f')
+    log(f"Registering Chroma API key: {API_KEY[:10]}...")
+    try:
+        chroma_api.register_key(API_KEY)
+        log("Chroma API key registered")
+    except Exception as e:
+        log(f"Chroma API key registration error: {e}")
+
+# ============== Chroma Helper Functions (Inlined) ==============
+
+def protein_to_pdb(protein) -> str:
+    """Convert protein to PDB string via temp file"""
+    fd, path = tempfile.mkstemp('.pdb')
+    os.close(fd)
+    protein.to_PDB(path)
+    with open(path) as f:
+        content = f.read()
+    os.unlink(path)
+    return content
+
+def run_chroma_unconditional(length: int, steps: int) -> str:
+    """Unconditional generation"""
+    log(f"Starting unconditional generation: length={length}, steps={steps}")
+    if not CHROMA_AVAILABLE:
+        raise RuntimeError("Chroma is not available")
+    model = Chroma()
+    log("Chroma model created")
+    proteins = model.sample(
+        chain_lengths=[length],
+        steps=steps,
+        initialize_noise=True
+    )
+    log("Sampling complete")
+    protein = proteins[0] if isinstance(proteins, list) else proteins
+    return protein_to_pdb(protein)
+
+def run_chroma_symmetry(length: int, symmetry_order: int, steps: int) -> str:
+    """Symmetric generation"""
+    log(f"Starting symmetry generation: length={length}, order={symmetry_order}, steps={steps}")
+    if not CHROMA_AVAILABLE:
+        raise RuntimeError("Chroma is not available")
+    pg_map = {2: 'C_2', 3: 'C_3', 4: 'C_4'}
+    pg_name = pg_map.get(symmetry_order, 'C_2')
+    G = get_point_group(pg_name)
+    model = Chroma()
+    conditioner = conditioners.SymmetryConditioner(G=G, num_chain_neighbors=symmetry_order)
+    proteins = model.sample(
+        chain_lengths=[length],
+        conditioner=conditioner,
+        steps=steps,
+        initialize_noise=True
+    )
+    protein = proteins[0] if isinstance(proteins, list) else proteins
+    return protein_to_pdb(protein)
+
+def run_chroma_compact(length: int, rg_scale: float, steps: int) -> str:
+    """Compact/Rg-conditioned generation"""
+    log(f"Starting compact generation: length={length}, rg_scale={rg_scale}, steps={steps}")
+    if not CHROMA_AVAILABLE:
+        raise RuntimeError("Chroma is not available")
+    try:
+        model = Chroma()
+        conditioner = conditioners.RgConditioner(scale=rg_scale)
+        proteins = model.sample(
+            chain_lengths=[length],
+            conditioner=conditioner,
+            steps=steps,
+            initialize_noise=True
+        )
+        protein = proteins[0] if isinstance(proteins, list) else proteins
+        return protein_to_pdb(protein)
+    except Exception as e:
+        log(f"Compact failed, trying unconditional: {e}")
+        return run_chroma_unconditional(length, steps)
+
+def run_chroma_shape(length: int, steps: int, letter: str = 'G') -> str:
+    """Letter-shaped generation"""
+    log(f"Starting shape generation: length={length}, letter={letter}, steps={steps}")
+    if not CHROMA_AVAILABLE:
+        raise RuntimeError("Chroma is not available")
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import numpy as np
+
+        width_pixels = 35
+        depth_ratio = 0.15
+        fontsize_ratio = 1.2
+        fontsize = int(fontsize_ratio * width_pixels)
+        depth = int(depth_ratio * width_pixels)
+
+        font_paths = [
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "LiberationSans-Regular.ttf",
+        ]
+        font = None
+        for fp in font_paths:
+            if os.path.exists(fp):
+                font = ImageFont.truetype(fp, fontsize)
+                break
+
+        if font is None:
+            log("Font not found, using unconditional")
+            return run_chroma_unconditional(length, steps)
+
+        ascent, descent = font.getmetrics()
+        text_width = font.getmask(letter).getbbox()[2]
+        text_height = font.getmask(letter).getbbox()[3] + descent
+
+        image = Image.new("RGBA", (text_width + 10, text_height + 10), (255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        draw.text((5, 5), letter, (0, 0, 0), font=font)
+
+        A = np.asarray(image).mean(-1)
+        A = A < 100.0
+        V = np.ones(list(A.shape) + [depth]) * A[:, :, None]
+        X_point_cloud = np.stack(np.nonzero(V), 1)
+        X_point_cloud = X_point_cloud + np.random.rand(*X_point_cloud.shape)
+
+        max_points = 2000
+        if X_point_cloud.shape[0] > max_points:
+            np.random.shuffle(X_point_cloud)
+            X_point_cloud = X_point_cloud[:max_points]
+
+        model = Chroma()
+        conditioner = conditioners.ShapeConditioner(
+            X_point_cloud,
+            model.backbone_network.noise_schedule,
+            autoscale_num_residues=length
+        )
+        proteins = model.sample(
+            chain_lengths=[length],
+            conditioner=conditioner,
+            steps=steps,
+            initialize_noise=True
+        )
+        protein = proteins[0] if isinstance(proteins, list) else proteins
+        return protein_to_pdb(protein)
+
+    except Exception as e:
+        log(f"Shape failed: {e}")
+        return run_chroma_unconditional(length, steps)
+
+def run_chroma_substructure(pdb_file: str, selection_string: str, steps: int) -> str:
+    """Motif-based protein design"""
+    log(f"Starting substructure: file={pdb_file}, selection={selection_string}, steps={steps}")
+    if not CHROMA_AVAILABLE:
+        raise RuntimeError("Chroma is not available")
+    model = Chroma()
+    protein = Protein(pdb_file)
+    if protein.sys.num_chains() == 0:
+        raise ValueError("Failed to load protein from PDB")
+    proteins = model.design(
+        protein_init=protein,
+        design_selection=selection_string,
+        steps=steps
+    )
+    protein = proteins[0] if isinstance(proteins, list) else proteins
+    return protein_to_pdb(protein)
+
+# ============== Chroma API Wrappers ==============
+
+async def run_chroma_async(mode: str, length: int, steps: int = 200, **kwargs) -> str:
+    """Run Chroma inference - direct function call (no subprocess)"""
+    import concurrent.futures
+
+    def sync_call():
+        if mode == "unconditional":
+            return run_chroma_unconditional(length, steps)
+        elif mode == "symmetry":
+            return run_chroma_symmetry(length, kwargs.get('symmetry_order', 2), steps)
+        elif mode == "compact":
+            return run_chroma_compact(length, kwargs.get('rg_scale', 1.0), steps)
+        elif mode == "shape":
+            return run_chroma_shape(length, steps, kwargs.get('letter', 'G'))
+        elif mode == "substructure":
+            return run_chroma_substructure(kwargs.get('pdb_file', ''), kwargs.get('selection', 'all'), steps)
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        result = await loop.run_in_executor(pool, sync_call)
+    return result
 
 app = FastAPI(title="Protein Design Studio API", version="1.0.0")
 
@@ -242,9 +472,6 @@ def extract_sequence_from_pdb(pdb_content: str) -> str:
     # Sort by chain and residue number
     sorted_residues = sorted(residues.items(), key=lambda x: (x[0][0], x[0][1]))
     return ''.join(aa for _, aa in sorted_residues)
-    length: int = 100
-    temperature: float = 1.0
-    steps: int = 200
 
 class ChromaCompactRequest(BaseModel):
     length: int = 100
@@ -281,62 +508,8 @@ class BatchChromaRequest(BaseModel):
 
 # ============== Chroma Design ==============
 
-RUN_CHROMA_SCRIPT = str(Path(get_base_path()) / "run_chroma.py")
-
-# Chroma module reference - populated on first use
-_chroma_module = None
-
-def get_chroma_python() -> str:
-    """Get Python path - use current Python since generate-chroma is installed via pip"""
-    return sys.executable
-
-def _import_run_chroma():
-    """Import run_chroma module directly to avoid subprocess issues in PyInstaller bundle"""
-    global _chroma_module
-    if _chroma_module is None:
-        import importlib.util
-        # Ensure API key is in environment before loading module
-        os.environ.setdefault('CHROMA_API_KEY', '8a633008828649bda2b1431721abdb3f')
-        spec = importlib.util.spec_from_file_location("run_chroma", RUN_CHROMA_SCRIPT)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"Failed to load run_chroma from {RUN_CHROMA_SCRIPT}")
-        _chroma_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(_chroma_module)
-    return _chroma_module
-
-def run_chroma_sync(mode: str, length: int, steps: int = 200, **kwargs) -> str:
-    """Run Chroma inference synchronously by calling run_chroma functions directly"""
-    mod = _import_run_chroma()
-
-    if mode == "unconditional":
-        return mod.run_unconditional(length, steps)
-    elif mode == "symmetry":
-        symmetry_order = kwargs.get('symmetry_order', 2)
-        return mod.run_symmetry(length, symmetry_order, steps)
-    elif mode == "compact":
-        rg_scale = kwargs.get('rg_scale', 1.0)
-        return mod.run_compact(length, rg_scale, steps)
-    elif mode == "shape":
-        letter = kwargs.get('letter', 'G')
-        return mod.run_shape(length, steps, letter)
-    elif mode == "substructure":
-        pdb_file = kwargs.get('pdb_file', '')
-        selection = kwargs.get('selection', 'all')
-        return mod.run_substructure(pdb_file, selection, steps)
-    else:
-        raise ValueError(f"Unknown mode: {mode}")
-
-async def run_chroma_async(mode: str, length: int, steps: int = 200, **kwargs) -> str:
-    """Run Chroma inference - direct function call (no subprocess)"""
-    import concurrent.futures
-
-    loop = asyncio.get_event_loop()
-    with concurrent.futures.ThreadPoolExecutor() as pool:
-        result = await loop.run_in_executor(
-            pool,
-            lambda: run_chroma_sync(mode, length, steps, **kwargs)
-        )
-    return result
+# NOTE: The Chroma functions and run_chroma_async are now defined inline at the top of the file
+# to avoid PyInstaller bundle issues with file-based imports.
 
 @app.post("/api/chroma/design")
 async def design_chroma(req: ChromaUnconditionalRequest):
@@ -375,7 +548,7 @@ async def design_chroma_symmetry(req: ChromaSymmetryRequest):
 async def design_chroma_shape(req: ChromaShapeRequest):
     """Design protein backbone using Chroma - Shape mode"""
     try:
-        pdb_content = await run_chroma_async("shape", req.length, req.steps)
+        pdb_content = await run_chroma_async("shape", req.length, req.steps, letter=req.shape_letter)
         sequence = extract_sequence_from_pdb(pdb_content)
         return {
             "pdb_content": pdb_content,
@@ -414,31 +587,10 @@ async def design_chroma_substructure(req: ChromaSubstructureRequest):
         os.write(fd, req.pdb_content.encode())
         os.close(fd)
 
-        python_path = get_chroma_python()
-
-        cmd = [python_path, RUN_CHROMA_SCRIPT, "substructure", "0", str(req.steps), pdb_path, req.selection]
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=get_base_path()
-        )
-
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
-        except asyncio.TimeoutError:
-            proc.kill()
-            raise RuntimeError("Chroma timed out after 300 seconds")
+            pdb_content = await run_chroma_async("substructure", 0, req.steps, pdb_file=pdb_path, selection=req.selection)
         finally:
             os.unlink(pdb_path)
-
-        if proc.returncode != 0:
-            raise RuntimeError(f"Chroma failed: {stderr.decode()}")
-
-        import json
-        data = json.loads(stdout.decode())
-        pdb_content = data.get("pdb", "")
 
         sequence = extract_sequence_from_pdb(pdb_content)
         return {
