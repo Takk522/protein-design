@@ -1,15 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 import os
+import inspect
 
 block_cipher = None
 
-# Get the absolute path to ProteinMPNN
-PROTEINMPNN_PATH = os.path.join(os.getcwd(), 'ProteinMPNN')
+# Get absolute paths
+CURRENT_DIR = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+PROJECT_ROOT = os.getcwd()
+PROTEINMPNN_PATH = os.path.join(PROJECT_ROOT, 'ProteinMPNN')
 
 a = Analysis(
     ['server/main.py'],
-    pathex=[os.path.dirname(os.path.abspath(__file__))],
+    pathex=[PROJECT_ROOT],
     binaries=[],
     datas=[
         ('server/run_chroma.py', 'server'),
