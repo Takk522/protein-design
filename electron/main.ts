@@ -8,16 +8,32 @@ import { spawn, ChildProcess } from 'child_process'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Setup logging first - before anything else
 log.transports.file.level = 'info'
 log.transports.console.level = 'debug'
-log.info('Application starting...')
+
+// Catch startup errors
+process.on('uncaughtException', (error) => {
+  console.error('[CRASH] Uncaught exception at startup:', error)
+  log.error('[CRASH] Uncaught exception at startup:', error)
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[CRASH] Unhandled rejection at startup:', reason)
+  log.error('[CRASH] Unhandled rejection at startup:', reason)
+})
+
+log.info('[MAIN] Application starting, isPackaged:', app.isPackaged)
+log.info('[MAIN] Platform:', process.platform)
+log.info('[MAIN] Resources path:', process.resourcesPath)
+log.info('[MAIN] CWD:', process.cwd())
 
 let mainWindow: BrowserWindow | null = null
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 let viteProcess: ChildProcess | null = null
 
 function createWindow() {
-  log.info('Creating main window...')
+  log.info('[CREATE_WINDOW] Creating main window...')
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -122,29 +138,38 @@ async function startBackend() {
 }
 
 app.whenReady().then(async () => {
-  log.info('App ready')
+  log.info('[STARTUP] App ready fired')
   try {
     if (isDev) {
+      log.info('[STARTUP] Starting Vite...')
       await startVite()
+      log.info('[STARTUP] Vite started')
+    } else {
+      log.info('[STARTUP] Production mode - skipping Vite')
     }
   } catch (error) {
-    log.error('Failed to start dev server:', error)
+    log.error('[STARTUP] Failed to start dev server:', error)
   }
 
   try {
+    log.info('[STARTUP] Starting backend...')
     await startBackend()
+    log.info('[STARTUP] Backend started')
   } catch (error) {
-    log.error('Failed to start backend:', error)
+    log.error('[STARTUP] Failed to start backend:', error)
   }
 
-  // Always create the window
+  log.info('[STARTUP] Creating window...')
   createWindow()
+  log.info('[STARTUP] Window creation initiated')
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
     }
   })
+}).catch((error) => {
+  log.error('[STARTUP] Uncaught error in app.whenReady():', error)
 })
 
 app.on('window-all-closed', () => {
