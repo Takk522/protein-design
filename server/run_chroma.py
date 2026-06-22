@@ -20,16 +20,16 @@ import torch
 from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
 
-# Add chroma to path
-CHROMA_ENV = "/Users/jianchengluo/anaconda3/envs/chroma"
-sys.path.insert(0, f"{CHROMA_ENV}/lib/python3.9/site-packages")
-
-from chroma.models.chroma import Chroma
-from chroma.layers.structure.conditioners import (
-    SymmetryConditioner, ShapeConditioner, RgConditioner, SubstructureConditioner
-)
-from chroma.layers.structure.symmetry import get_point_group
-from chroma import Protein
+# Import chroma - use correct import path
+try:
+    from chroma import Chroma, Protein
+    from chroma.layers.structure.conditioners import (
+        SymmetryConditioner, ShapeConditioner, RgConditioner, SubstructureConditioner
+    )
+    from chroma.layers.structure.symmetry import get_point_group
+except ImportError as e:
+    print(json.dumps({"error": f"Failed to import chroma: {e}. Install with: pip install generate-chroma"}))
+    sys.exit(1)
 
 def protein_to_pdb(protein) -> str:
     """Convert protein to PDB string via temp file"""
@@ -98,15 +98,24 @@ def run_compact(length, rg_scale, steps):
     except Exception as e:
         return run_unconditional(length, steps)
 
-def run_substructure(pdb_file, selection_string, steps):
-    """
-    Motif-based protein design using Chroma's design_selection parameter.
+def run_shape(length, steps):
+    """Letter-shaped generation"""
+    devnull = open(os.devnull, 'w')
+    with redirect_stdout(devnull), redirect_stderr(devnull):
+        model = Chroma(device="cpu")
+        proteins = model.sample(
+            samples=1,
+            steps=steps,
+            chain_lengths=[length],
+            conditioner=None,
+            initialize_noise=True
+        )
+    devnull.close()
+    protein = proteins[0] if isinstance(proteins, list) else proteins
+    return protein_to_pdb(protein)
 
-    Args:
-        pdb_file: Path to PDB file (not content)
-        selection_string: PyMOL-style selection string (e.g., "resid 20-50 around 5.0")
-        steps: Number of inference steps
-    """
+def run_substructure(pdb_file, selection_string, steps):
+    """Motif-based protein design using Chroma's design_selection parameter."""
     devnull = open(os.devnull, 'w')
     with redirect_stdout(devnull), redirect_stderr(devnull):
         model = Chroma(device="cpu")
@@ -118,7 +127,6 @@ def run_substructure(pdb_file, selection_string, steps):
             raise ValueError("Failed to load protein from PDB - no chains found")
 
         # Use design_selection parameter directly with chroma.sample
-        # This is the simpler approach from the reference code
         proteins = model.sample(
             samples=1,
             steps=steps,
@@ -152,21 +160,8 @@ def main():
             rg_scale = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
             pdb_content = run_compact(length, rg_scale, steps)
         elif mode == "shape":
-            devnull = open(os.devnull, 'w')
-            with redirect_stdout(devnull), redirect_stderr(devnull):
-                model = Chroma(device="cpu")
-                proteins = model.sample(
-                    samples=1,
-                    steps=steps,
-                    chain_lengths=[length],
-                    conditioner=None,
-                    initialize_noise=True
-                )
-            devnull.close()
-            protein = proteins[0] if isinstance(proteins, list) else proteins
-            pdb_content = protein_to_pdb(protein)
+            pdb_content = run_shape(length, steps)
         elif mode == "substructure":
-            # Args: mode length steps pdb_file selection_string steps
             if len(sys.argv) < 5:
                 print(json.dumps({"error": "Substructure requires: pdb_file selection_string"}))
                 sys.exit(1)

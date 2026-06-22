@@ -21,6 +21,13 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Handle PyInstaller extraction path
+def get_base_path():
+    """Get the base path for bundled resources (PyInstaller)"""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
 app = FastAPI(title="Protein Design Studio API", version="1.0.0")
 
 # CORS configuration
@@ -274,17 +281,11 @@ class BatchChromaRequest(BaseModel):
 
 # ============== Chroma Design ==============
 
-RUN_CHROMA_SCRIPT = str(Path(__file__).parent / "run_chroma.py")
+RUN_CHROMA_SCRIPT = str(Path(get_base_path()) / "run_chroma.py")
 
 def get_chroma_python() -> str:
-    """Get Python path for Chroma environment"""
-    if sys.platform == "win32":
-        python_path = CHROMA_ENV / "python.exe"
-    else:
-        python_path = CHROMA_ENV / "bin" / "python"
-    if python_path.exists():
-        return str(python_path)
-    return "python3"
+    """Get Python path - use current Python since generate-chroma is installed via pip"""
+    return sys.executable
 
 def run_chroma(mode: str, length: int, steps: int = 200, **kwargs) -> str:
     """Run Chroma inference via subprocess (blocking)"""
@@ -299,7 +300,7 @@ def run_chroma(mode: str, length: int, steps: int = 200, **kwargs) -> str:
         capture_output=True,
         text=True,
         timeout=300,
-        cwd=str(Path(__file__).parent)
+        cwd=get_base_path()
     )
 
     if result.returncode != 0:
@@ -326,7 +327,7 @@ async def run_chroma_async(mode: str, length: int, steps: int = 200, **kwargs) -
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        cwd=str(Path(__file__).parent)
+        cwd=get_base_path()
     )
 
     try:
@@ -462,7 +463,7 @@ async def design_chroma_substructure(req: ChromaSubstructureRequest):
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=str(Path(__file__).parent)
+            cwd=get_base_path()
         )
 
         try:
@@ -511,7 +512,7 @@ async def batch_chroma(req: BatchChromaRequest):
 
 # ============== ProteinMPNN ==============
 
-RUN_PROTEINMPNN_SCRIPT = str(Path(__file__).parent / "run_proteinmpnn.py")
+RUN_PROTEINMPNN_SCRIPT = str(Path(get_base_path()) / "run_proteinmpnn.py")
 MPNN_ENV_PATH = Path("/Users/jianchengluo/protein-design/ProteinMPNN")
 
 class ProteinMPNNRequest(BaseModel):
@@ -550,7 +551,7 @@ async def design_proteinmpnn(req: ProteinMPNNRequest):
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=str(Path(__file__).parent)
+            cwd=get_base_path()
         )
 
         try:

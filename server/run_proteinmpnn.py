@@ -15,16 +15,28 @@ import json
 import traceback
 import tempfile
 import os
+import subprocess
 from pathlib import Path
 
-# Paths
-PROTEINMPNN_PATH = Path("/Users/jianchengluo/protein-design/ProteinMPNN")
+# Get the directory where this script is located
+SCRIPT_DIR = Path(__file__).parent.resolve()
+# ProteinMPNN is in the same repo, sibling to server directory
+# Navigate from server/ to repo root and then to ProteinMPNN
+REPO_ROOT = SCRIPT_DIR.parent
+PROTEINMPNN_PATH = REPO_ROOT / "ProteinMPNN"
+
+# Paths for ProteinMPNN scripts
 PARSE_SCRIPT = PROTEINMPNN_PATH / "helper_scripts" / "parse_multiple_chains.py"
 MPNN_SCRIPT = PROTEINMPNN_PATH / "protein_mpnn_run.py"
-PYTHON_PATH = "/Users/jianchengluo/anaconda3/bin/python3"
+
+def get_python_path():
+    """Get Python executable - use current Python"""
+    return sys.executable
 
 def run_proteinmpnn(pdb_content: str, num_sequences: int = 1, temperature: float = 0.1, seed: int = 42) -> list:
     """Run ProteinMPNN on PDB content and return list of sequences"""
+
+    python_path = get_python_path()
 
     # Create temp directory
     temp_dir = tempfile.mkdtemp()
@@ -41,14 +53,14 @@ def run_proteinmpnn(pdb_content: str, num_sequences: int = 1, temperature: float
 
         # Step 1: Parse PDB to JSONL
         parse_cmd = [
-            PYTHON_PATH, str(PARSE_SCRIPT),
+            python_path, str(PARSE_SCRIPT),
             "--input_path", temp_dir + "/",
             "--output_path", parsed_path
         ]
-        parse_result = os.system(" ".join(parse_cmd))
+        parse_result = subprocess.run(parse_cmd, capture_output=True, text=True)
 
-        if parse_result != 0:
-            raise RuntimeError(f"Parse failed with code {parse_result}")
+        if parse_result.returncode != 0:
+            raise RuntimeError(f"Parse failed: {parse_result.stderr}")
 
         # Check if parsed file exists
         if not os.path.exists(parsed_path):
@@ -56,7 +68,7 @@ def run_proteinmpnn(pdb_content: str, num_sequences: int = 1, temperature: float
 
         # Step 2: Run ProteinMPNN
         mpnn_cmd = [
-            PYTHON_PATH, str(MPNN_SCRIPT),
+            python_path, str(MPNN_SCRIPT),
             "--jsonl_path", parsed_path,
             "--out_folder", output_dir,
             "--num_seq_per_target", str(num_sequences),
@@ -65,8 +77,7 @@ def run_proteinmpnn(pdb_content: str, num_sequences: int = 1, temperature: float
             "--batch_size", "1"
         ]
 
-        import subprocess
-        result = subprocess.run(mpnn_cmd, capture_output=True, text=True)
+        result = subprocess.run(mpnn_cmd, capture_output=True, text=True, timeout=300)
 
         if result.returncode != 0:
             raise RuntimeError(f"ProteinMPNN failed: {result.stderr}")
@@ -107,7 +118,7 @@ def run_proteinmpnn(pdb_content: str, num_sequences: int = 1, temperature: float
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 def main():
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         print(json.dumps({"error": "Usage: run_proteinmpnn.py [pdb_content_file] [num_sequences] [temperature] [seed]"}))
         sys.exit(1)
 

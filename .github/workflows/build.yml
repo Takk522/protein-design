@@ -40,33 +40,7 @@ jobs:
 
       - name: Build Python backend
         run: |
-          python -c "
-          import os
-          # Fix server/main.py
-          with open('server/main.py', 'r') as f:
-            content = f.read()
-          content = content.replace('/Users/jianchengluo/anaconda3/envs/chroma', 'C:\\\\Users\\\\runneradmin\\\\miniconda3\\\\envs\\\\chroma')
-          content = content.replace('/Users/jianchengluo/ProteinMPNN', os.getcwd() + '\\\\ProteinMPNN')
-          content = content.replace('/Users/jianchengluo/.protein-design', os.getcwd())
-          with open('server/main.py', 'w') as f:
-            f.write(content)
-
-          # Fix run_proteinmpnn.py
-          with open('server/run_proteinmpnn.py', 'r') as f:
-            content = f.read()
-          content = content.replace('/Users/jianchengluo/ProteinMPNN', os.getcwd() + '\\\\ProteinMPNN')
-          content = content.replace('/Users/jianchengluo/anaconda3/bin/python3', 'python')
-          with open('server/run_proteinmpnn.py', 'w') as f:
-            f.write(content)
-
-          # Fix run_chroma.py
-          with open('server/run_chroma.py', 'r') as f:
-            content = f.read()
-          content = content.replace('/Users/jianchengluo/anaconda3/envs/chroma', 'C:\\\\Users\\\\runneradmin\\\\miniconda3\\\\envs\\\\chroma')
-          with open('server/run_chroma.py', 'w') as f:
-            f.write(content)
-          "
-          pyinstaller --onefile --console --name ProteinDesignBackend server/main.py
+          pyinstaller build-python-backend.spec
           Copy-Item dist/ProteinDesignBackend.exe ./
 
 
