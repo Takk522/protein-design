@@ -283,77 +283,60 @@ class BatchChromaRequest(BaseModel):
 
 RUN_CHROMA_SCRIPT = str(Path(get_base_path()) / "run_chroma.py")
 
+# Chroma module reference - populated on first use
+_chroma_module = None
+
 def get_chroma_python() -> str:
     """Get Python path - use current Python since generate-chroma is installed via pip"""
     return sys.executable
 
-def run_chroma(mode: str, length: int, steps: int = 200, **kwargs) -> str:
-    """Run Chroma inference via subprocess (blocking)"""
-    python_path = get_chroma_python()
+def _import_run_chroma():
+    """Import run_chroma module directly to avoid subprocess issues in PyInstaller bundle"""
+    global _chroma_module
+    if _chroma_module is None:
+        import importlib.util
+        # Ensure API key is in environment before loading module
+        os.environ.setdefault('CHROMA_API_KEY', '8a633008828649bda2b1431721abdb3f')
+        spec = importlib.util.spec_from_file_location("run_chroma", RUN_CHROMA_SCRIPT)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"Failed to load run_chroma from {RUN_CHROMA_SCRIPT}")
+        _chroma_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_chroma_module)
+    return _chroma_module
 
-    cmd = [python_path, RUN_CHROMA_SCRIPT, mode, str(length), str(steps)]
-    for key, value in kwargs.items():
-        cmd.append(str(value))
+def run_chroma_sync(mode: str, length: int, steps: int = 200, **kwargs) -> str:
+    """Run Chroma inference synchronously by calling run_chroma functions directly"""
+    mod = _import_run_chroma()
 
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=300,
-        cwd=get_base_path()
-    )
-
-    if result.returncode != 0:
-        raise RuntimeError(f"Chroma failed: {result.stderr}")
-
-    import json
-    try:
-        data = json.loads(result.stdout)
-        if "error" in data:
-            raise RuntimeError(data["error"])
-        return data.get("pdb", "")
-    except json.JSONDecodeError:
-        return result.stdout.strip()
+    if mode == "unconditional":
+        return mod.run_unconditional(length, steps)
+    elif mode == "symmetry":
+        symmetry_order = kwargs.get('symmetry_order', 2)
+        return mod.run_symmetry(length, symmetry_order, steps)
+    elif mode == "compact":
+        rg_scale = kwargs.get('rg_scale', 1.0)
+        return mod.run_compact(length, rg_scale, steps)
+    elif mode == "shape":
+        letter = kwargs.get('letter', 'G')
+        return mod.run_shape(length, steps, letter)
+    elif mode == "substructure":
+        pdb_file = kwargs.get('pdb_file', '')
+        selection = kwargs.get('selection', 'all')
+        return mod.run_substructure(pdb_file, selection, steps)
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
 
 async def run_chroma_async(mode: str, length: int, steps: int = 200, **kwargs) -> str:
-    """Run Chroma inference via async subprocess"""
-    python_path = get_chroma_python()
+    """Run Chroma inference - direct function call (no subprocess)"""
+    import concurrent.futures
 
-    cmd = [python_path, RUN_CHROMA_SCRIPT, mode, str(length), str(steps)]
-    for key, value in kwargs.items():
-        cmd.append(str(value))
-
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=get_base_path()
-    )
-
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
-    except asyncio.TimeoutError:
-        proc.kill()
-        raise RuntimeError("Chroma timed out after 300 seconds")
-
-    if proc.returncode != 0:
-        # Check if stdout has valid JSON even with error
-        try:
-            data = json.loads(stdout.decode())
-            if "pdb" in data:
-                return data["pdb"]
-        except:
-            pass
-        raise RuntimeError(f"Chroma failed: {stderr.decode()}")
-
-    import json
-    try:
-        data = json.loads(stdout.decode())
-        if "error" in data:
-            raise RuntimeError(data["error"])
-        return data.get("pdb", "")
-    except json.JSONDecodeError:
-        return stdout.decode().strip()
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        result = await loop.run_in_executor(
+            pool,
+            lambda: run_chroma_sync(mode, length, steps, **kwargs)
+        )
+    return result
 
 @app.post("/api/chroma/design")
 async def design_chroma(req: ChromaUnconditionalRequest):
