@@ -10,15 +10,22 @@ import traceback
 import tempfile
 import os
 
-# Write logs to temp file for debugging
-log_file = tempfile.NamedTemporaryFile(mode='a', suffix='.log', delete=False)
-log_file.write(f"run_chroma.py started: {sys.argv}\n")
-log_file.flush()
+# Write logs to temp file for debugging - use fixed path in same dir as script
+LOG_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_FILE = os.path.join(LOG_DIR, "chroma_debug.log")
 
 def log(msg):
-    log_file.write(f"{msg}\n")
-    log_file.flush()
-    print(msg, flush=True)
+    timestamp = __import__('datetime').datetime.now().isoformat()
+    line = f"[{timestamp}] {msg}\n"
+    with open(LOG_FILE, 'a') as f:
+        f.write(line)
+    print(line, end='', flush=True)
+
+log(f"=== run_chroma.py STARTED ===")
+log(f"sys.executable: {sys.executable}")
+log(f"sys.version: {sys.version}")
+log(f"sys.argv: {sys.argv}")
+log(f"CWD: {os.getcwd()}")
 
 try:
     from chroma import api
@@ -31,7 +38,15 @@ try:
     log("Chroma imports successful")
 except ImportError as e:
     log(f"Import error: {e}")
+    import traceback
+    log(f"Traceback: {traceback.format_exc()}")
     print(json.dumps({"error": f"Failed to import chroma: {e}. Install with: pip install generate-chroma"}))
+    sys.exit(1)
+except Exception as e:
+    log(f"Unexpected import error: {e}")
+    import traceback
+    log(f"Traceback: {traceback.format_exc()}")
+    print(json.dumps({"error": str(e), "traceback": traceback.format_exc()}))
     sys.exit(1)
 
 # Register API key
@@ -227,9 +242,6 @@ def main():
         log(f"Traceback: {tb}")
         print(json.dumps({"error": str(e), "traceback": tb}))
         sys.exit(1)
-    finally:
-        log_file.close()
-        os.unlink(log_file.name)
 
 if __name__ == "__main__":
     main()
