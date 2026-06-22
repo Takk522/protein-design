@@ -369,13 +369,7 @@ async def design_chroma(req: ChromaUnconditionalRequest):
         }
     except Exception as e:
         logger.error(f"Chroma error: {e}")
-        return {
-            "pdb_content": generate_mock_pdb(req.length),
-            "sequence": generate_mock_sequence(req.length),
-            "confidence": 0.8,
-            "mode": "unconditional",
-            "error": str(e)
-        }
+        raise HTTPException(status_code=500, detail=f"Chroma API failed: {str(e)}")
 
 @app.post("/api/chroma/symmetry")
 async def design_chroma_symmetry(req: ChromaSymmetryRequest):
@@ -391,14 +385,8 @@ async def design_chroma_symmetry(req: ChromaSymmetryRequest):
             "mode": "symmetry"
         }
     except Exception as e:
-        logger.error(f"Chroma error: {e}")
-        return {
-            "pdb_content": generate_mock_pdb(req.length * req.symmetry_order),
-            "sequence": generate_mock_sequence(req.length * req.symmetry_order),
-            "symmetry_order": req.symmetry_order,
-            "mode": "symmetry",
-            "error": str(e)
-        }
+        logger.error(f"Chroma symmetry error: {e}")
+        raise HTTPException(status_code=500, detail=f"Chroma symmetry failed: {str(e)}")
 
 @app.post("/api/chroma/shape")
 async def design_chroma_shape(req: ChromaShapeRequest):
@@ -413,14 +401,8 @@ async def design_chroma_shape(req: ChromaShapeRequest):
             "mode": "shape"
         }
     except Exception as e:
-        logger.error(f"Chroma error: {e}")
-        return {
-            "pdb_content": generate_mock_pdb(req.length),
-            "sequence": generate_mock_sequence(req.length),
-            "shape_letter": req.shape_letter,
-            "mode": "shape",
-            "error": str(e)
-        }
+        logger.error(f"Chroma shape error: {e}")
+        raise HTTPException(status_code=500, detail=f"Chroma shape failed: {str(e)}")
 
 @app.post("/api/chroma/compact")
 async def design_chroma_compact(req: ChromaCompactRequest):
@@ -436,14 +418,8 @@ async def design_chroma_compact(req: ChromaCompactRequest):
             "mode": "compact"
         }
     except Exception as e:
-        logger.error(f"Chroma error: {e}")
-        return {
-            "pdb_content": generate_mock_pdb(req.length),
-            "sequence": generate_mock_sequence(req.length),
-            "rg_scale": req.rg_scale,
-            "mode": "compact",
-            "error": str(e)
-        }
+        logger.error(f"Chroma compact error: {e}")
+        raise HTTPException(status_code=500, detail=f"Chroma compact failed: {str(e)}")
 
 @app.post("/api/chroma/substructure")
 async def design_chroma_substructure(req: ChromaSubstructureRequest):
@@ -489,25 +465,25 @@ async def design_chroma_substructure(req: ChromaSubstructureRequest):
             "mode": "substructure"
         }
     except Exception as e:
-        logger.error(f"Chroma error: {e}")
-        return {
-            "pdb_content": generate_mock_pdb(100),
-            "sequence": generate_mock_sequence(100),
-            "selection": req.selection,
-            "mode": "substructure",
-            "error": str(e)
-        }
+        logger.error(f"Chroma substructure error: {e}")
+        raise HTTPException(status_code=500, detail=f"Chroma substructure failed: {str(e)}")
 
 @app.post("/api/chroma/batch")
 async def batch_chroma(req: BatchChromaRequest):
     """Batch Chroma design"""
     results = []
     for i in range(req.batch_size):
-        results.append({
-            "pdb_content": generate_mock_pdb(req.params.get("length", 100)),
-            "sequence": generate_mock_sequence(req.params.get("length", 100)),
-            "design_id": i
-        })
+        try:
+            pdb_content = await run_chroma_async("unconditional", req.params.get("length", 100), req.params.get("steps", 200))
+            sequence = extract_sequence_from_pdb(pdb_content)
+            results.append({
+                "pdb_content": pdb_content,
+                "sequence": sequence,
+                "design_id": i
+            })
+        except Exception as e:
+            logger.error(f"Chroma batch error for design {i}: {e}")
+            raise HTTPException(status_code=500, detail=f"Chroma batch design {i} failed: {str(e)}")
     return {"designs": results}
 
 # ============== ProteinMPNN ==============
@@ -538,7 +514,7 @@ async def design_proteinmpnn(req: ProteinMPNNRequest):
         os.write(fd, req.pdb_content.encode())
         os.close(fd)
 
-        python_path = str(DEFAULT_PYTHON) if DEFAULT_PYTHON.exists() else "python3"
+        python_path = sys.executable  # Use current Python since packages are pip-installed
         cmd = [
             python_path, RUN_PROTEINMPNN_SCRIPT,
             pdb_path,
@@ -578,13 +554,7 @@ async def design_proteinmpnn(req: ProteinMPNNRequest):
 
     except Exception as e:
         logger.error(f"ProteinMPNN error: {e}")
-        backbone_length = extract_backbone_length(req.pdb_content)
-        return {
-            "sequences": [generate_mock_sequence(backbone_length) for _ in range(req.num_sequences)],
-            "backbone_length": backbone_length,
-            "num_sequences": req.num_sequences,
-            "error": str(e)
-        }
+        raise HTTPException(status_code=500, detail=f"ProteinMPNN failed: {str(e)}")
 
 @app.post("/api/proteinmpnn/batch")
 async def batch_proteinmpnn(req: BatchProteinMPNNRequest):
