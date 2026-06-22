@@ -33,9 +33,8 @@ except ImportError as e:
     print(json.dumps({"error": f"Failed to import chroma: {e}. Install with: pip install generate-chroma"}))
     sys.exit(1)
 
-# Register API key - get from environment or use default
-# Note: For production, get your own key from https://generatebio.com/chroma
-API_KEY = os.environ.get('CHROMA_API_KEY', 'e424a1b4a1604a3a8cc83f0792dc3253')
+# Register API key
+API_KEY = os.environ.get('CHROMA_API_KEY', '8a633008828649bda2b1431721abdb3f')
 try:
     api.register_key(API_KEY)
 except Exception as e:
