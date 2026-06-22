@@ -64,6 +64,8 @@ jobs:
             f.write(content)
           "
           pyinstaller --onefile --console --name ProteinDesignBackend server/main.py
+          Copy-Item dist/ProteinDesignBackend.exe ./
+
 
       - name: Build Electron app
         run: npm run electron:build:win
