@@ -22,7 +22,9 @@ from contextlib import redirect_stdout, redirect_stderr
 
 # Import chroma - use correct import path
 try:
+    from chroma import api
     from chroma import Chroma, Protein
+    from chroma import conditioners
     from chroma.layers.structure.conditioners import (
         SymmetryConditioner, ShapeConditioner, RgConditioner, SubstructureConditioner
     )
@@ -30,6 +32,15 @@ try:
 except ImportError as e:
     print(json.dumps({"error": f"Failed to import chroma: {e}. Install with: pip install generate-chroma"}))
     sys.exit(1)
+
+# Register API key - get from environment or use default
+# Note: For production, get your own key from https://generatebio.com/chroma
+API_KEY = os.environ.get('CHROMA_API_KEY', 'e424a1b4a1604a3a8cc83f0792dc3253')
+try:
+    api.register_key(API_KEY)
+except Exception as e:
+    print(json.dumps({"error": f"Failed to register API key: {e}"}))
+    # Continue anyway - key might already be registered
 
 def protein_to_pdb(protein) -> str:
     """Convert protein to PDB string via temp file"""
@@ -45,12 +56,10 @@ def run_unconditional(length, steps):
     """Unconditional generation"""
     devnull = open(os.devnull, 'w')
     with redirect_stdout(devnull), redirect_stderr(devnull):
-        model = Chroma(device="cpu")
+        model = Chroma()
         proteins = model.sample(
-            samples=1,
-            steps=steps,
             chain_lengths=[length],
-            conditioner=None,
+            steps=steps,
             initialize_noise=True
         )
     devnull.close()
@@ -65,13 +74,12 @@ def run_symmetry(length, symmetry_order, steps):
 
     devnull = open(os.devnull, 'w')
     with redirect_stdout(devnull), redirect_stderr(devnull):
-        model = Chroma(device="cpu")
-        conditioner = SymmetryConditioner(G=G, num_chain_neighbors=symmetry_order)
+        model = Chroma()
+        conditioner = conditioners.SymmetryConditioner(G=G, num_chain_neighbors=symmetry_order)
         proteins = model.sample(
-            samples=1,
-            steps=steps,
             chain_lengths=[length],
             conditioner=conditioner,
+            steps=steps,
             initialize_noise=True
         )
     devnull.close()
@@ -83,13 +91,12 @@ def run_compact(length, rg_scale, steps):
     try:
         devnull = open(os.devnull, 'w')
         with redirect_stdout(devnull), redirect_stderr(devnull):
-            model = Chroma(device="cpu")
-            conditioner = RgConditioner(scale=rg_scale)
+            model = Chroma()
+            conditioner = conditioners.RgConditioner(scale=rg_scale)
             proteins = model.sample(
-                samples=1,
-                steps=steps,
                 chain_lengths=[length],
                 conditioner=conditioner,
+                steps=steps,
                 initialize_noise=True
             )
         devnull.close()
@@ -98,41 +105,95 @@ def run_compact(length, rg_scale, steps):
     except Exception as e:
         return run_unconditional(length, steps)
 
-def run_shape(length, steps):
+def run_shape(length, steps, letter='G'):
     """Letter-shaped generation"""
-    devnull = open(os.devnull, 'w')
-    with redirect_stdout(devnull), redirect_stderr(devnull):
-        model = Chroma(device="cpu")
-        proteins = model.sample(
-            samples=1,
-            steps=steps,
-            chain_lengths=[length],
-            conditioner=None,
-            initialize_noise=True
-        )
-    devnull.close()
-    protein = proteins[0] if isinstance(proteins, list) else proteins
-    return protein_to_pdb(protein)
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import numpy as np
+
+        # Create point cloud from letter
+        width_pixels = 35
+        depth_ratio = 0.15
+        fontsize_ratio = 1.2
+        fontsize = int(fontsize_ratio * width_pixels)
+        depth = int(depth_ratio * width_pixels)
+
+        # Try to find font
+        font_paths = [
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "LiberationSans-Regular.ttf",
+        ]
+        font = None
+        for fp in font_paths:
+            if os.path.exists(fp):
+                font = ImageFont.truetype(fp, fontsize)
+                break
+
+        if font is None:
+            # Fallback - generate simple shape
+            print(json.dumps({"error": "Font not found for shape generation, using unconditional"}))
+            return run_unconditional(length, steps)
+
+        ascent, descent = font.getmetrics()
+        text_width = font.getmask(letter).getbbox()[2]
+        text_height = font.getmask(letter).getbbox()[3] + descent
+
+        image = Image.new("RGBA", (text_width + 10, text_height + 10), (255, 255, 255))
+        draw = ImageDraw.Draw(image)
+        draw.text((5, 5), letter, (0, 0, 0), font=font)
+
+        A = np.asarray(image).mean(-1)
+        A = A < 100.0
+        V = np.ones(list(A.shape) + [depth]) * A[:, :, None]
+        X_point_cloud = np.stack(np.nonzero(V), 1)
+        X_point_cloud = X_point_cloud + np.random.rand(*X_point_cloud.shape)
+
+        # Limit points
+        max_points = 2000
+        if X_point_cloud.shape[0] > max_points:
+            np.random.shuffle(X_point_cloud)
+            X_point_cloud = X_point_cloud[:max_points]
+
+        devnull = open(os.devnull, 'w')
+        with redirect_stdout(devnull), redirect_stderr(devnull):
+            model = Chroma()
+            conditioner = conditioners.ShapeConditioner(
+                X_point_cloud,
+                model.backbone_network.noise_schedule,
+                autoscale_num_residues=length
+            )
+            proteins = model.sample(
+                chain_lengths=[length],
+                conditioner=conditioner,
+                steps=steps,
+                initialize_noise=True
+            )
+        devnull.close()
+        protein = proteins[0] if isinstance(proteins, list) else proteins
+        return protein_to_pdb(protein)
+
+    except Exception as e:
+        print(json.dumps({"error": f"Shape generation failed: {e}, using unconditional"}))
+        return run_unconditional(length, steps)
 
 def run_substructure(pdb_file, selection_string, steps):
     """Motif-based protein design using Chroma's design_selection parameter."""
     devnull = open(os.devnull, 'w')
     with redirect_stdout(devnull), redirect_stderr(devnull):
-        model = Chroma(device="cpu")
+        model = Chroma()
 
         # Load protein from PDB file
-        protein = Protein.from_PDB(pdb_file)
+        protein = Protein(pdb_file)
 
         if protein.sys.num_chains() == 0:
             raise ValueError("Failed to load protein from PDB - no chains found")
 
-        # Use design_selection parameter directly with chroma.sample
-        proteins = model.sample(
-            samples=1,
-            steps=steps,
+        # Use design method with design_selection
+        proteins = model.design(
             protein_init=protein,
             design_selection=selection_string,
-            initialize_noise=False
+            steps=steps
         )
 
     devnull.close()
@@ -160,7 +221,8 @@ def main():
             rg_scale = float(sys.argv[4]) if len(sys.argv) > 4 else 1.0
             pdb_content = run_compact(length, rg_scale, steps)
         elif mode == "shape":
-            pdb_content = run_shape(length, steps)
+            letter = sys.argv[4] if len(sys.argv) > 4 else 'G'
+            pdb_content = run_shape(length, steps, letter)
         elif mode == "substructure":
             if len(sys.argv) < 5:
                 print(json.dumps({"error": "Substructure requires: pdb_file selection_string"}))

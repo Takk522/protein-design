@@ -17,7 +17,7 @@ import fs from 'fs'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const RELEASE_URL = 'https://github.com/Takk522/protein-design/releases/download/v1.0.0/ProteinDesignBackend.exe'
+const RELEASE_URL = 'https://github.com/Takk522/protein-design/releases/download/v1.0.12/ProteinDesignBackend.exe'
 const HEALTH_CHECK_URL = 'http://127.0.0.1:8000/health'
 const MAX_WAIT_MS = 120000 // 2 minutes
 
