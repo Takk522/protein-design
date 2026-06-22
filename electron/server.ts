@@ -53,6 +53,31 @@ async function startWindowsBackend(): Promise<void> {
     log.info(`[Server] Using local backend exe: ${exePath}`)
   }
 
+  // Kill any existing process using port 8000
+  log.info('[Server] Checking for existing processes on port 8000...')
+  try {
+    const { execSync } = require('child_process')
+    // Find PID using port 8000 on Windows
+    const result = execSync('netstat -ano | findstr :8000', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })
+    const lines = result.trim().split('\n')
+    for (const line of lines) {
+      const parts = line.trim().split(/\s+/)
+      if (parts.length >= 5) {
+        const pid = parts[4]
+        if (pid && pid !== '0' && pid !== 'PID') {
+          log.info(`[Server] Killing existing process ${pid} on port 8000`)
+          execSync(`taskkill /PID ${pid} /F`, { stdio: 'ignore' })
+        }
+      }
+    }
+  } catch (e: any) {
+    // No process found using port 8000, that's fine
+    log.info('[Server] No existing process on port 8000')
+  }
+
+  // Wait a moment for the port to be released
+  await new Promise(resolve => setTimeout(resolve, 1000))
+
   // Start the backend process
   log.info('[Server] Starting Python backend...')
   backendProcess = spawn(exePath, [], {

@@ -889,4 +889,30 @@ async def upload_pdb(req: UploadPDBRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    import socket
+
+    # Try to find an available port
+    def find_available_port(start_port=8000, max_attempts=100):
+        for port in range(start_port, start_port + max_attempts):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.bind(('127.0.0.1', port))
+                sock.close()
+                return port
+            except OSError:
+                continue
+        raise RuntimeError("Could not find available port")
+
+    port = int(os.environ.get('PORT', 8000))
+
+    # Check if port is available, if not find another
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(('127.0.0.1', port))
+        sock.close()
+    except OSError:
+        logger.warning(f"Port {port} is in use, finding available port...")
+        port = find_available_port()
+        logger.info(f"Using port {port}")
+
+    uvicorn.run(app, host="127.0.0.1", port=port)
