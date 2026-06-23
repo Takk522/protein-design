@@ -83,7 +83,25 @@ async function startWindowsBackend(): Promise<void> {
   backendProcess = spawn(exePath, [], {
     cwd: path.dirname(exePath),
     detached: true,
-    stdio: 'ignore'
+    stdio: ['pipe', 'pipe', 'pipe']
+  })
+
+  // Log Python process output for debugging
+  if (backendProcess.stdout) {
+    backendProcess.stdout.on('data', (data) => {
+      log.info('[Python stdout]: ' + data.toString().trim())
+    })
+  }
+  if (backendProcess.stderr) {
+    backendProcess.stderr.on('data', (data) => {
+      log.info('[Python stderr]: ' + data.toString().trim())
+    })
+  }
+  backendProcess.on('error', (err) => {
+    log.error('[Server] Backend process error:', err)
+  })
+  backendProcess.on('exit', (code, signal) => {
+    log.info(`[Server] Backend exited with code ${code}, signal ${signal}`)
   })
 
   backendProcess.unref()

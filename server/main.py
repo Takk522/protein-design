@@ -3,6 +3,11 @@ Protein Design Studio - FastAPI Backend
 Main entry point for the backend API
 """
 
+import sys
+print(f"[Python Backend] Starting... sys.version={sys.version}", flush=True)
+print(f"[Python Backend] sys.executable={sys.executable}", flush=True)
+print(f"[Python Backend] sys.path={sys.path[:3]}", flush=True)
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -59,27 +64,41 @@ SubstructureConditioner = None
 get_point_group = None
 
 try:
+    print("[Python Backend] Attempting to import chroma...", flush=True)
     from chroma import api as chroma_api
+    print("[Python Backend] Imported chroma.api", flush=True)
     from chroma import Chroma, Protein
+    print("[Python Backend] Imported Chroma, Protein", flush=True)
     from chroma import conditioners
+    print("[Python Backend] Imported conditioners", flush=True)
     from chroma.layers.structure.conditioners import (
         SymmetryConditioner, ShapeConditioner, RgConditioner, SubstructureConditioner
     )
+    print("[Python Backend] Imported conditioners submodules", flush=True)
     from chroma.layers.structure.symmetry import get_point_group
+    print("[Python Backend] Imported get_point_group", flush=True)
     CHROMA_AVAILABLE = True
     log("Chroma imported successfully")
 except ImportError as e:
-    log(f"Chroma import error: {e}")
+    print(f"[Python Backend] Chroma import error: {e}", flush=True)
+    import traceback
+    traceback.print_exc()
+except Exception as e:
+    print(f"[Python Backend] Unexpected error during chroma import: {e}", flush=True)
+    import traceback
+    traceback.print_exc()
 
 # Register API key at startup
 if CHROMA_AVAILABLE:
     API_KEY = os.environ.get('CHROMA_API_KEY', '8a633008828649bda2b1431721abdb3f')
-    log(f"Registering Chroma API key: {API_KEY[:10]}...")
+    print(f"[Python Backend] Registering API key: {API_KEY[:10]}...", flush=True)
     try:
         chroma_api.register_key(API_KEY)
-        log("Chroma API key registered")
+        print("[Python Backend] API key registered", flush=True)
     except Exception as e:
-        log(f"Chroma API key registration error: {e}")
+        print(f"[Python Backend] API key registration error: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
 # ============== Chroma Helper Functions (Inlined) ==============
 
@@ -1045,9 +1064,11 @@ if __name__ == "__main__":
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(('127.0.0.1', port))
         sock.close()
+        print(f"[Python Backend] Port {port} is available", flush=True)
     except OSError:
-        logger.warning(f"Port {port} is in use, finding available port...")
+        print(f"[Python Backend] Port {port} is in use, finding another...", flush=True)
         port = find_available_port()
-        logger.info(f"Using port {port}")
+        print(f"[Python Backend] Using port {port}", flush=True)
 
+    print(f"[Python Backend] Starting server on 127.0.0.1:{port}", flush=True)
     uvicorn.run(app, host="127.0.0.1", port=port)
