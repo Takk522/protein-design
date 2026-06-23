@@ -1,6 +1,6 @@
 {
   "name": "protein-design",
-  "version": "1.0.23",
+  "version": "1.0.24",
   "description": "A desktop application for protein design using Chroma, ProteinMPNN, and ESMFold",
   "author": "Protein Design Team",
   "main": "dist-electron/main.js",
