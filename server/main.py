@@ -56,6 +56,49 @@ os.environ['TMP'] = temp_dir
 os.environ['TEMP'] = temp_dir
 print(f"[Python Backend] Set temp directory to: {temp_dir}", flush=True)
 
+# Patch urllib.request to redirect /tmp/ paths to Windows temp dir
+# Chroma downloads PDB files to /tmp which doesn't exist on Windows
+import platform
+if platform.system() == 'Windows':
+    import urllib.request
+    import urllib.error
+    import builtins
+
+    # Capture originals FIRST
+    _orig_urlretrieve = urllib.request.urlretrieve
+    _orig_urlopen = urllib.request.urlopen
+
+    def _patched_urlretrieve(url, filename=None, reporthook=None, data=None):
+        """Patched urlretrieve to redirect /tmp/ paths to Windows temp"""
+        import os
+        if isinstance(url, str) and url.startswith('file:///tmp/'):
+            # Redirect to Windows temp
+            filename = filename or os.path.join(tempfile.gettempdir(), os.path.basename(url.replace('file:///tmp/', '')))
+            url = 'file://' + filename
+        elif isinstance(url, urllib.request.Request):
+            req_url = url.full_url if hasattr(url, 'full_url') else str(url)
+            if req_url.startswith('file:///tmp/'):
+                filename = filename or os.path.join(tempfile.gettempdir(), os.path.basename(req_url.replace('file:///tmp/', '')))
+                url = urllib.request.Request('file://' + filename, data=url.data if hasattr(url, 'data') else None)
+        return _orig_urlretrieve(url, filename, reporthook, data)
+
+    def _patched_urlopen(url, data=None, timeout=None, *, cafile=None, capath=None, cadefault=False, context=None):
+        """Patched urlopen to redirect /tmp/ paths to Windows temp"""
+        if isinstance(url, str) and url.startswith('file:///tmp/'):
+            url = 'file://' + os.path.join(tempfile.gettempdir(), os.path.basename(url.replace('file:///tmp/', '')))
+        elif isinstance(url, urllib.request.Request):
+            req_url = url.full_url if hasattr(url, 'full_url') else str(url)
+            if req_url.startswith('file:///tmp/'):
+                url = urllib.request.Request(
+                    'file://' + os.path.join(tempfile.gettempdir(), os.path.basename(req_url.replace('file:///tmp/', ''))),
+                    data=url.data if hasattr(url, 'data') else None
+                )
+        return _orig_urlopen(url, data, timeout, cafile=cafile, capath=capath, cadefault=cadefault, context=context)
+
+    urllib.request.urlretrieve = _patched_urlretrieve
+    urllib.request.urlopen = _patched_urlopen
+    print("[Python Backend] Patched urllib to redirect /tmp/ paths", flush=True)
+
 # ============== Chroma Import and Setup ==============
 # Chroma is imported inline to avoid PyInstaller subprocess issues
 
