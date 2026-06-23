@@ -49,6 +49,13 @@ def get_base_path():
         return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
 
+# Set temp directory for Chroma - Chroma uses /tmp which doesn't exist on Windows
+temp_dir = tempfile.gettempdir()
+os.environ['TMPDIR'] = temp_dir
+os.environ['TMP'] = temp_dir
+os.environ['TEMP'] = temp_dir
+print(f"[Python Backend] Set temp directory to: {temp_dir}", flush=True)
+
 # ============== Chroma Import and Setup ==============
 # Chroma is imported inline to avoid PyInstaller subprocess issues
 
