@@ -307,19 +307,54 @@ def run_chroma_substructure(pdb_file: str, selection_string: str, steps: int) ->
 async def run_chroma_async(mode: str, length: int, steps: int = 200, **kwargs) -> str:
     """Run Chroma inference - direct function call (no subprocess)"""
     import concurrent.futures
+    import signal
+
+    # Set a timeout for the operation (30 minutes)
+    timeout_seconds = 1800
 
     def sync_call():
-        if mode == "unconditional":
-            return run_chroma_unconditional(length, steps)
-        elif mode == "symmetry":
-            return run_chroma_symmetry(length, kwargs.get('symmetry_order', 2), steps)
-        elif mode == "compact":
-            return run_chroma_compact(length, kwargs.get('rg_scale', 1.0), steps)
-        elif mode == "shape":
-            return run_chroma_shape(length, steps, kwargs.get('letter', 'G'))
-        elif mode == "substructure":
-            return run_chroma_substructure(kwargs.get('pdb_file', ''), kwargs.get('selection', 'all'), steps)
-        else:
+        try:
+            print(f"[Chroma] Starting sync_call for mode={mode}", flush=True)
+            if mode == "unconditional":
+                result = run_chroma_unconditional(length, steps)
+                print(f"[Chroma] Completed run_chroma_unconditional", flush=True)
+                return result
+            elif mode == "symmetry":
+                result = run_chroma_symmetry(length, kwargs.get('symmetry_order', 2), steps)
+                print(f"[Chroma] Completed run_chroma_symmetry", flush=True)
+                return result
+            elif mode == "compact":
+                result = run_chroma_compact(length, kwargs.get('rg_scale', 1.0), steps)
+                print(f"[Chroma] Completed run_chroma_compact", flush=True)
+                return result
+            elif mode == "shape":
+                result = run_chroma_shape(length, steps, kwargs.get('letter', 'G'))
+                print(f"[Chroma] Completed run_chroma_shape", flush=True)
+                return result
+            elif mode == "substructure":
+                result = run_chroma_substructure(kwargs.get('pdb_file', ''), kwargs.get('selection', 'all'), steps)
+                print(f"[Chroma] Completed run_chroma_substructure", flush=True)
+                return result
+            else:
+                raise ValueError(f"Unknown mode: {mode}")
+        except Exception as e:
+            print(f"[Chroma] Error in sync_call: {type(e).__name__}: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            raise
+
+    loop = asyncio.get_event_loop()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(pool, sync_call),
+                timeout=timeout_seconds
+            )
+            print(f"[Chroma] Operation completed successfully", flush=True)
+            return result
+        except asyncio.TimeoutError:
+            print(f"[Chroma] Operation timed out after {timeout_seconds} seconds", flush=True)
+            raise RuntimeError(f"Chroma operation timed out after {timeout_seconds} seconds")
             raise ValueError(f"Unknown mode: {mode}")
 
     loop = asyncio.get_event_loop()
@@ -1121,4 +1156,5 @@ if __name__ == "__main__":
         print(f"[Python Backend] Using port {port}", flush=True)
 
     print(f"[Python Backend] Starting server on 127.0.0.1:{port}", flush=True)
-    uvicorn.run(app, host="127.0.0.1", port=port)
+    # Increase timeout to allow long-running Chroma operations (30 minutes)
+    uvicorn.run(app, host="127.0.0.1", port=port, timeout_keep_alive=1800)
