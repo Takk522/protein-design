@@ -2,6 +2,7 @@
 import sys
 import os
 import inspect
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
 
@@ -10,15 +11,19 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentfra
 PROJECT_ROOT = os.getcwd()
 PROTEINMPNN_PATH = os.path.join(PROJECT_ROOT, 'ProteinMPNN')
 
+# Collect numpy and sklearn with all binaries to avoid ABI issues
+numpy_binaries = collect_all('numpy')
+sklearn_binaries = collect_all('sklearn')
+
 a = Analysis(
     ['server/main.py'],
     pathex=[PROJECT_ROOT],
-    binaries=[],
+    binaries=numpy_binaries[0] + sklearn_binaries[0],
     datas=[
         ('server/run_chroma.py', 'server'),
         ('server/run_proteinmpnn.py', 'server'),
         (PROTEINMPNN_PATH, 'ProteinMPNN'),
-    ],
+    ] + numpy_binaries[1] + sklearn_binaries[1],
     hiddenimports=[
         'fastapi',
         'uvicorn',
@@ -36,6 +41,7 @@ a = Analysis(
         'pydantic',
         'starlette',
         'numpy',
+        'sklearn',
         'chroma',
         'chroma.api',
         'chroma.layers',
